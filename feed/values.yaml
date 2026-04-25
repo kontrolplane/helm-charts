@@ -15,6 +15,12 @@ fullnameOverride: ""
 config:
   # -- feed refresh interval (e.g. 15m, 1h)
   refreshInterval: "15m"
+  # -- when items become read: "scroll", "open", or "manual"
+  markReadOn: "open"
+  # -- keep read items for: "7d", "30d", "90d", or "forever"
+  retention: "30d"
+  # -- list row density: "tight", "default", or "loose"
+  density: "default"
   # -- enable debug logging
   debug: false
   # -- seed default feeds on startup

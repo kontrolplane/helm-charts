@@ -53,10 +53,16 @@ spec:
               value: "8080"
             - name: REFRESH_INTERVAL
               value: {{ .Values.config.refreshInterval | quote }}
-            - name: DEBUG
+            - name: DEVELOPMENT_DEBUG
               value: {{ .Values.config.debug | quote }}
-            - name: SEED
+            - name: DEVELOPMENT_SEED
               value: {{ .Values.config.seed | quote }}
+            - name: MARK_READ_ON
+              value: {{ .Values.config.markReadOn | quote }}
+            - name: RETENTION
+              value: {{ .Values.config.retention | quote }}
+            - name: DENSITY
+              value: {{ .Values.config.density | quote }}
             - name: DATABASE_DRIVER
               value: {{ .Values.database.driver | quote }}
             {{- if eq .Values.database.driver "sqlite" }}
