@@ -65,47 +65,38 @@ jobs:
       - name: install-helm
         uses: azure/setup-helm@v4
 
-      - name: version-and-package-charts
+      - name: check-versions-and-package-charts
         id: package
         run: |
           mkdir -p .cr-release-packages
+          failed=0
 
           for chart in $(echo '${{ needs.changes.outputs.charts }}' | jq -r '.[]'); do
             echo "==> processing $chart"
 
             # read current version from Chart.yaml
             current=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
-            echo "    current version: $current"
+            echo "    version: $current"
 
-            # calculate next patch version based on git tags
-            prefix="$chart-"
-            latest_tag=$(git tag -l "${prefix}*" --sort=-v:refname | head -n1)
-
-            if [ -n "$latest_tag" ]; then
-              latest_ver="${latest_tag#$prefix}"
-              # bump patch version
-              major=$(echo "$latest_ver" | cut -d. -f1)
-              minor=$(echo "$latest_ver" | cut -d. -f2)
-              patch=$(echo "$latest_ver" | cut -d. -f3)
-              next="$major.$minor.$((patch + 1))"
-            else
-              # no tag yet — use the version from Chart.yaml
-              next="$current"
+            # check if this version was already released
+            tag="${chart}-${current}"
+            if git tag -l "$tag" | grep -q .; then
+              echo "::error::chart '$chart' version $current already released (tag $tag exists). bump the version in $chart/Chart.yaml before merging."
+              failed=1
+              continue
             fi
-
-            echo "    next version: $next"
-
-            # update Chart.yaml with new version
-            sed -i "s/^version:.*/version: $next/" "$chart/Chart.yaml"
 
             # package the chart
             helm package "$chart" -d .cr-release-packages
 
             # tag the release
-            tag="${prefix}${next}"
             echo "    tagging $tag"
             git tag "$tag"
           done
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
 
           git push --tags
 
