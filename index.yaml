@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  feed:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-04-25T13:51:50.984283171Z"
+    description: a helm chart for kontrolplane-feed, a self-hosted rss reader
+    digest: 6137bd31052c0cf0a17f4deafcf362f9d2b3b44495b4af76c8a1e8bb9ab0a1cb
+    name: feed
+    type: application
+    urls:
+    - https://kontrolplane.github.io/helm-charts/feed-1.0.1.tgz
+    version: 1.0.1
+generated: "2026-04-25T13:51:50.983555259Z"
