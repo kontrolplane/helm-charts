@@ -1,0 +1,187 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "feed.fullname" . }}
+  labels:
+    {{- include "feed.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  {{- if eq .Values.database.driver "sqlite" }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "feed.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "feed.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "feed.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "8080"
+            - name: REFRESH_INTERVAL
+              value: {{ .Values.config.refreshInterval | quote }}
+            - name: DEBUG
+              value: {{ .Values.config.debug | quote }}
+            - name: SEED
+              value: {{ .Values.config.seed | quote }}
+            - name: DATABASE_DRIVER
+              value: {{ .Values.database.driver | quote }}
+            {{- if eq .Values.database.driver "sqlite" }}
+            - name: DATABASE_PATH
+              value: {{ .Values.database.sqlite.path | quote }}
+            {{- else if eq .Values.database.driver "postgres" }}
+            {{- if .Values.cnpg.enabled }}
+            - name: DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "feed.cnpg.secretName" . }}
+                  key: host
+            - name: DATABASE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "feed.cnpg.secretName" . }}
+                  key: port
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "feed.cnpg.secretName" . }}
+                  key: dbname
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "feed.cnpg.secretName" . }}
+                  key: user
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "feed.cnpg.secretName" . }}
+                  key: password
+            - name: DATABASE_SSL_MODE
+              value: require
+            {{- else if .Values.database.postgres.existingSecret }}
+            - name: DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.postgres.existingSecret }}
+                  key: DATABASE_HOST
+            - name: DATABASE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.postgres.existingSecret }}
+                  key: DATABASE_PORT
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.postgres.existingSecret }}
+                  key: DATABASE_NAME
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.postgres.existingSecret }}
+                  key: DATABASE_USER
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.postgres.existingSecret }}
+                  key: DATABASE_PASSWORD
+            - name: DATABASE_SSL_MODE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.postgres.existingSecret }}
+                  key: DATABASE_SSL_MODE
+            {{- else }}
+            - name: DATABASE_HOST
+              value: {{ .Values.database.postgres.host | quote }}
+            - name: DATABASE_PORT
+              value: {{ .Values.database.postgres.port | quote }}
+            - name: DATABASE_NAME
+              value: {{ .Values.database.postgres.database | quote }}
+            - name: DATABASE_USER
+              value: {{ .Values.database.postgres.user | quote }}
+            - name: DATABASE_PASSWORD
+              value: {{ .Values.database.postgres.password | quote }}
+            - name: DATABASE_SSL_MODE
+              value: {{ .Values.database.postgres.sslMode | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if and (eq .Values.database.driver "sqlite") .Values.database.sqlite.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+            {{- with .Values.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        {{- if and (eq .Values.database.driver "sqlite") .Values.database.sqlite.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "feed.fullname" . }}-data
+        {{- end }}
+        {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,162 @@
+name: release charts
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+  pages: write
+
+jobs:
+  changes:
+    name: detect-changed-charts
+    runs-on: ubuntu-latest
+    outputs:
+      charts: ${{ steps.changed.outputs.charts }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: find-changed-charts
+        id: changed
+        run: |
+          # on first commit or if gh-pages doesn't exist yet, treat all charts as changed
+          if ! git rev-parse origin/gh-pages >/dev/null 2>&1; then
+            charts=$(find . -maxdepth 2 -name Chart.yaml -exec dirname {} \; | sed 's|^\./||' | sort)
+          else
+            charts=$(git diff --name-only origin/gh-pages HEAD -- | grep '/' | cut -d/ -f1 | sort -u)
+            # filter to only directories that actually contain a Chart.yaml
+            charts=$(echo "$charts" | while read dir; do
+              [ -f "$dir/Chart.yaml" ] && echo "$dir"
+            done)
+          fi
+
+          if [ -z "$charts" ]; then
+            echo "charts=[]" >> "$GITHUB_OUTPUT"
+          else
+            json=$(echo "$charts" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "charts=$json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: print-changes
+        run: echo "changed charts - ${{ steps.changed.outputs.charts }}"
+
+  release:
+    name: release-charts
+    needs: changes
+    if: needs.changes.outputs.charts != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: configure-git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: install-helm
+        uses: azure/setup-helm@v4
+
+      - name: version-and-package-charts
+        id: package
+        run: |
+          mkdir -p .cr-release-packages
+
+          for chart in $(echo '${{ needs.changes.outputs.charts }}' | jq -r '.[]'); do
+            echo "==> processing $chart"
+
+            # read current version from Chart.yaml
+            current=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
+            echo "    current version: $current"
+
+            # calculate next patch version based on git tags
+            prefix="$chart-"
+            latest_tag=$(git tag -l "${prefix}*" --sort=-v:refname | head -n1)
+
+            if [ -n "$latest_tag" ]; then
+              latest_ver="${latest_tag#$prefix}"
+              # bump patch version
+              major=$(echo "$latest_ver" | cut -d. -f1)
+              minor=$(echo "$latest_ver" | cut -d. -f2)
+              patch=$(echo "$latest_ver" | cut -d. -f3)
+              next="$major.$minor.$((patch + 1))"
+            else
+              # no tag yet — use the version from Chart.yaml
+              next="$current"
+            fi
+
+            echo "    next version: $next"
+
+            # update Chart.yaml with new version
+            sed -i "s/^version:.*/version: $next/" "$chart/Chart.yaml"
+
+            # package the chart
+            helm package "$chart" -d .cr-release-packages
+
+            # tag the release
+            tag="${prefix}${next}"
+            echo "    tagging $tag"
+            git tag "$tag"
+          done
+
+          git push --tags
+
+      - name: login-to-ghcr
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: push-to-oci-registry
+        run: |
+          for pkg in .cr-release-packages/*.tgz; do
+            [ -f "$pkg" ] || continue
+            echo "==> pushing $pkg to oci"
+            helm push "$pkg" oci://ghcr.io/${{ github.repository_owner }}/helm-charts
+          done
+
+      - name: checkout-gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 0
+        continue-on-error: true
+
+      - name: initialise-gh-pages-if-needed
+        run: |
+          if [ ! -d "gh-pages/.git" ]; then
+            mkdir -p gh-pages
+            cd gh-pages
+            git init
+            git checkout -b gh-pages
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          fi
+
+      - name: update-helm-repo-index
+        run: |
+          cp .cr-release-packages/*.tgz gh-pages/ 2>/dev/null || true
+
+          if [ -f gh-pages/index.yaml ]; then
+            helm repo index gh-pages \
+              --url "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" \
+              --merge gh-pages/index.yaml
+          else
+            helm repo index gh-pages \
+              --url "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          fi
+
+      - name: publish-gh-pages
+        run: |
+          cd gh-pages
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "no changes to publish" && exit 0
+          git commit -m "release $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin gh-pages --force

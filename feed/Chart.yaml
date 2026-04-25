@@ -1,0 +1,8 @@
+---
+apiVersion: v2
+name: feed
+description: a helm chart for kontrolplane-feed, a self-hosted rss reader
+
+type: application
+version: 1.0.0
+appVersion: "0.1.0"
