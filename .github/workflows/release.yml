@@ -159,4 +159,4 @@ jobs:
           git add -A
           git diff --cached --quiet && echo "no changes to publish" && exit 0
           git commit -m "release $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git push origin gh-pages --force
+          git push origin HEAD:gh-pages --force
