@@ -4,5 +4,5 @@ name: feed
 description: a helm chart for kontrolplane-feed, a self-hosted rss reader
 
 type: application
-version: 1.0.1
-appVersion: "1.0.0"
+version: 1.0.2
+appVersion: "1.1.0"

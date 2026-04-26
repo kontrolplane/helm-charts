@@ -26,6 +26,16 @@ config:
   # -- seed default feeds on startup
   seed: false
 
+# -- feeds to import on startup (OPML format rendered from this list)
+# when set, the default seed feeds are skipped unless config.seed is true
+feeds: []
+# - folder: default
+#   feeds:
+#     - title: hacker news
+#       url: https://news.ycombinator.com/rss
+#     - title: cncf
+#       url: https://www.cncf.io/feed
+
 # -- database configuration
 database:
   # -- database driver: "sqlite" or "postgres"
