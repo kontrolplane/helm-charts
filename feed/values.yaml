@@ -2,7 +2,7 @@
 replicaCount: 1
 
 image:
-  repository: kontrolplane/feed
+  repository: "ghcr.io/kontrolplane/feed"
   pullPolicy: IfNotPresent
   # overrides the image tag whose default is the chart appVersion.
   tag: ""
