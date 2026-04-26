@@ -1,7 +1,5 @@
 # feed
 
-![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
-
 a helm chart for kontrolplane-feed, a self-hosted rss reader
 
 ## Values
@@ -23,9 +21,12 @@ a helm chart for kontrolplane-feed, a self-hosted rss reader
 | cnpg.instances | int | `1` | number of postgresql instances |
 | cnpg.nameOverride | string | `""` | name override for the cnpg cluster (defaults to fullname-db) |
 | cnpg.owner | string | `"feed"` | database owner |
-| config | object | `{"debug":false,"refreshInterval":"15m","seed":false}` | application configuration |
+| config | object | `{"debug":false,"density":"default","markReadOn":"open","refreshInterval":"15m","retention":"30d","seed":false}` | application configuration |
 | config.debug | bool | `false` | enable debug logging |
+| config.density | string | `"default"` | list row density: "tight", "default", or "loose" |
+| config.markReadOn | string | `"open"` | when items become read: "scroll", "open", or "manual" |
 | config.refreshInterval | string | `"15m"` | feed refresh interval (e.g. 15m, 1h) |
+| config.retention | string | `"30d"` | keep read items for: "7d", "30d", "90d", or "forever" |
 | config.seed | bool | `false` | seed default feeds on startup |
 | database | object | `{"driver":"sqlite","postgres":{"database":"feed","existingSecret":"","host":"","password":"","port":"5432","sslMode":"disable","user":"feed"},"sqlite":{"path":"/data/feed.db","persistence":{"accessModes":["ReadWriteOnce"],"enabled":true,"size":"1Gi","storageClass":""}}}` | database configuration |
 | database.driver | string | `"sqlite"` | database driver: "sqlite" or "postgres" |
@@ -37,6 +38,7 @@ a helm chart for kontrolplane-feed, a self-hosted rss reader
 | database.sqlite.persistence.storageClass | string | `""` | storage class for the pvc (empty string uses the default) |
 | extraEnv | list | `[]` | additional environment variables |
 | extraEnvFrom | list | `[]` | additional environment variables from secrets or configmaps |
+| feeds | list | `[]` | feeds to import on startup (OPML format rendered from this list) when set, the default seed feeds are skipped unless config.seed is true |
 | fullnameOverride | string | `""` |  |
 | httpRoute.annotations | object | `{}` |  |
 | httpRoute.enabled | bool | `false` |  |

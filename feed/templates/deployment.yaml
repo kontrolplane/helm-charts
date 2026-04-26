@@ -57,6 +57,10 @@ spec:
               value: {{ .Values.config.debug | quote }}
             - name: DEVELOPMENT_SEED
               value: {{ .Values.config.seed | quote }}
+            {{- if .Values.feeds }}
+            - name: FEEDS_FILE
+              value: /etc/feed/feeds.opml
+            {{- end }}
             - name: MARK_READ_ON
               value: {{ .Values.config.markReadOn | quote }}
             - name: RETENTION
@@ -167,6 +171,11 @@ spec:
             - name: data
               mountPath: /data
             {{- end }}
+            {{- if .Values.feeds }}
+            - name: feeds
+              mountPath: /etc/feed
+              readOnly: true
+            {{- end }}
             {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -175,6 +184,11 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "feed.fullname" . }}-data
+        {{- end }}
+        {{- if .Values.feeds }}
+        - name: feeds
+          configMap:
+            name: {{ include "feed.fullname" . }}-feeds
         {{- end }}
         {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}

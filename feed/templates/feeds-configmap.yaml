@@ -1,0 +1,25 @@
+{{- if .Values.feeds }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "feed.fullname" . }}-feeds
+  labels:
+    {{- include "feed.labels" . | nindent 4 }}
+data:
+  feeds.opml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <opml version="2.0">
+      <head>
+        <title>kontrolplane/feed</title>
+      </head>
+      <body>
+        {{- range .Values.feeds }}
+        <outline text="{{ .folder }}" title="{{ .folder }}">
+          {{- range .feeds }}
+          <outline type="rss" text="{{ .title }}" title="{{ .title }}" xmlUrl="{{ .url }}"{{ if .siteUrl }} htmlUrl="{{ .siteUrl }}"{{ end }} />
+          {{- end }}
+        </outline>
+        {{- end }}
+      </body>
+    </opml>
+{{- end }}
