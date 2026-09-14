@@ -1,0 +1,30 @@
+---
+apiVersion: v2
+name: konfig
+description: a helm chart for konfig, configuration management and remote execution across fleets of machines
+
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+home: https://kontrolplane.dev
+sources:
+  - https://github.com/kontrolplane/konfig
+keywords:
+  - konfig
+  - configuration-management
+  - fleet
+  - remote-execution
+  - nats
+maintainers:
+  - name: kontrolplane
+    url: https://github.com/kontrolplane
+
+# the message bus is deployed from the upstream nats chart rather than
+# reimplemented here: it is the same server compose runs, and its subject
+# permissions are the only part konfig has an opinion about (see values.yaml).
+dependencies:
+  - name: nats
+    version: "2.14.6"
+    repository: https://nats-io.github.io/k8s/helm/charts/
+    condition: nats.enabled

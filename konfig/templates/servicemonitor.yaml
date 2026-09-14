@@ -1,0 +1,31 @@
+{{- if .Values.controlplane.metrics.serviceMonitor.enabled }}
+{{- $component := dict "ctx" . "component" "controlplane" "values" .Values.controlplane }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "konfig.componentName" $component }}
+  labels:
+    {{- include "konfig.labels" $component | nindent 4 }}
+    {{- with .Values.controlplane.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "konfig.selectorLabels" $component | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.controlplane.metrics.serviceMonitor.interval }}
+      {{- with .Values.controlplane.metrics.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      {{- with .Values.controlplane.metrics.serviceMonitor.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlplane.metrics.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,3 @@
+{{- if .Values.controlplane.httpRoute.enabled }}
+{{- include "konfig.httproute" (dict "ctx" . "component" "controlplane" "values" .Values.controlplane) }}
+{{- end }}

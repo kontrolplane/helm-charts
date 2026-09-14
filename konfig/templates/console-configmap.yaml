@@ -1,0 +1,19 @@
+{{- if .Values.console.enabled }}
+{{- /*
+the console is a static bundle, so the controlplane url cannot be baked into the
+image without binding it to one deployment. the client reads
+window.__KONFIG_CONFIG__ from /config.js before the app bundle runs, which is
+what this file is.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "konfig.componentName" (dict "ctx" . "component" "console") }}
+  labels:
+    {{- include "konfig.labels" (dict "ctx" . "component" "console") | nindent 4 }}
+data:
+  config.js: |
+    window.__KONFIG_CONFIG__ = {
+      apiUrl: {{ include "konfig.apiURL" . | quote }},
+    }
+{{- end }}

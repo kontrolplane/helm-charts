@@ -1,0 +1,228 @@
+{{- include "konfig.validate" . }}
+{{- $component := dict "ctx" . "component" "controlplane" "values" .Values.controlplane }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "konfig.componentName" $component }}
+  labels:
+    {{- include "konfig.labels" $component | nindent 4 }}
+spec:
+  replicas: {{ .Values.controlplane.replicaCount }}
+  # the controlplane holds a nats connection and open event streams, and its
+  # storage is postgres, so there is nothing to hand over between revisions.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      {{- include "konfig.selectorLabels" $component | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- if not .Values.controlplane.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/controlplane-secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if and (not .Values.cnpg.enabled) (not .Values.database.existingSecret) }}
+        checksum/database: {{ include (print $.Template.BasePath "/database-secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.controlplane.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "konfig.labels" $component | nindent 8 }}
+        {{- with .Values.controlplane.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "konfig.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      {{- with .Values.controlplane.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.controlplane.terminationGracePeriodSeconds }}
+      {{- with .Values.controlplane.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: controlplane
+          image: {{ include "konfig.image" (dict "ctx" . "image" .Values.controlplane.image) | quote }}
+          imagePullPolicy: {{ .Values.controlplane.image.pullPolicy }}
+          {{- with .Values.controlplane.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.controlplane.service.port }}
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.controlplane.service.port | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.controlplane.logLevel | quote }}
+
+            {{- /* database */}}
+            {{- if .Values.cnpg.enabled }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "konfig.cnpg.secretName" . }}
+                  key: uri
+            {{- else }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "konfig.database.secretName" . }}
+                  key: {{ .Values.database.existingSecretKey }}
+            {{- end }}
+            {{- with .Values.database.maxConns }}
+            - name: DATABASE_MAX_CONNS
+              value: {{ . | quote }}
+            {{- end }}
+
+            {{- /* message bus. the password is read from its secret and spliced
+                   into the url by kubernetes, so no configmap or manifest ever
+                   carries it. */}}
+            {{- if .Values.nats.enabled }}
+            - name: NATS_CONTROLPLANE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "konfig.messagebus.secretName" . }}
+                  key: controlplane-password
+            {{- end }}
+            - name: NATS_URL
+              value: {{ include "konfig.messagebus.url" . | quote }}
+
+            {{- /* who the console is, and who may call the api */}}
+            - name: FRONTEND_URL
+              value: {{ include "konfig.consoleURL" . | quote }}
+            {{- with .Values.urls.extraOrigins }}
+            - name: KONFIG_EXTRA_ORIGINS
+              value: {{ join "," . | quote }}
+            {{- end }}
+
+            {{- /* authentication. the secrets themselves arrive through envFrom
+                   below; only the non-secret half is spelled out here. */}}
+            - name: JWT_TOKEN_EXPIRY
+              value: {{ .Values.controlplane.auth.jwtTokenExpiry | quote }}
+            {{- if .Values.controlplane.auth.github.enabled }}
+            - name: GITHUB_CALLBACK_URL
+              value: {{ printf "%s/authentication/github/callback" (include "konfig.apiURL" .) | quote }}
+            {{- end }}
+
+            {{- /* config repository */}}
+            {{- with .Values.controlplane.gitSource.url }}
+            - name: GIT_SOURCE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            - name: GIT_SOURCE_BRANCH
+              value: {{ .Values.controlplane.gitSource.branch | quote }}
+            {{- with .Values.controlplane.gitSource.installationId }}
+            - name: GIT_SOURCE_INSTALLATION_ID
+              value: {{ . | quote }}
+            {{- end }}
+            - name: CONVERGE_ON_SYNC
+              value: {{ .Values.controlplane.gitSource.convergeOnSync | quote }}
+
+            {{- /* the fleet */}}
+            {{- with .Values.controlplane.agents.acceptance }}
+            - name: AGENT_ACCEPTANCE
+              value: {{ . | quote }}
+            {{- end }}
+            - name: RETENTION_DAYS
+              value: {{ .Values.controlplane.retentionDays | quote }}
+            {{- with .Values.controlplane.driftInterval }}
+            - name: DRIFT_INTERVAL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.controlplane.advisories.enabled }}
+            - name: KONFIG_ADVISORIES_ENABLED
+              value: "true"
+            {{- with .Values.controlplane.advisories.url }}
+            - name: KONFIG_ADVISORIES_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+
+            {{- /* hosts that cannot run an agent */}}
+            {{- if .Values.controlplane.ssh.existingSecret }}
+            - name: KONFIG_SSH_KEY
+              value: {{ printf "/etc/konfig/ssh/%s" .Values.controlplane.ssh.privateKeyKey | quote }}
+            - name: KONFIG_SSH_KNOWN_HOSTS
+              value: {{ printf "/etc/konfig/ssh/%s" .Values.controlplane.ssh.knownHostsKey | quote }}
+            {{- end }}
+
+            {{- with .Values.controlplane.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "konfig.controlplane.secretName" . }}
+            {{- with .Values.controlplane.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.controlplane.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.controlplane.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.controlplane.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.controlplane.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            # config repositories are cloned and plans rendered under TMPDIR,
+            # which is the only thing the controlplane writes at runtime.
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.controlplane.ssh.existingSecret }}
+            - name: ssh
+              mountPath: /etc/konfig/ssh
+              readOnly: true
+            {{- end }}
+            {{- with .Values.controlplane.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.controlplane.tmpSizeLimit }}
+        {{- if .Values.controlplane.ssh.existingSecret }}
+        - name: ssh
+          secret:
+            secretName: {{ .Values.controlplane.ssh.existingSecret }}
+            defaultMode: 0400
+        {{- end }}
+        {{- with .Values.controlplane.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.controlplane.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlplane.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlplane.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlplane.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

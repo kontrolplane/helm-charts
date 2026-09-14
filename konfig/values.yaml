@@ -1,0 +1,533 @@
+# default values for konfig.
+#
+# konfig is three moving parts: the controlplane (the api and the brain), the
+# console (the static web client), and nats (the bus the fleet talks over).
+# postgresql backs the controlplane. agents run on the machines being managed,
+# from the .deb/.rpm, and are not deployed by this chart - they dial in.
+
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+# -- how this deployment is reached from a browser.
+# the console fetches the api from `api`, and the controlplane refuses cors from
+# anywhere other than `console`, so both have to be the urls a browser actually
+# uses. left empty they are derived from the ingress or httproute of each
+# component, falling back to the localhost ports `kubectl port-forward` gives
+# you.
+urls:
+  # -- browser-facing url of the console (becomes FRONTEND_URL)
+  console: ""
+  # -- browser-facing url of the controlplane api (becomes the console's apiUrl)
+  api: ""
+  # -- additional cors origins the controlplane accepts (KONFIG_EXTRA_ORIGINS)
+  extraOrigins: []
+
+controlplane:
+  # -- the controlplane runs the drift loop, the retention sweep and the
+  # schedules, and none of them are leader-elected yet: a second replica runs
+  # them a second time. keep this at 1 until konfig elects a leader.
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/kontrolplane/konfig/controlplane
+    pullPolicy: IfNotPresent
+    # -- overrides the image tag whose default is the chart appVersion
+    tag: ""
+
+  # -- log level: "debug", "info", "warn" or "error"
+  logLevel: info
+
+  # -- read every secret below from an existing secret instead of the one this
+  # chart creates. the chart-managed secret is not rendered at all when this is
+  # set, and the whole secret is loaded with envFrom, so it must carry every key
+  # the deployment needs: JWT_SIGNING_TOKEN, and whichever of
+  # BASIC_AUTH_USER, BASIC_AUTH_PASSWORD, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET,
+  # GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, AGENT_ENROLMENT_TOKEN, AGENT_TOKEN,
+  # KONFIG_MASTER_KEY apply.
+  existingSecret: ""
+
+  auth:
+    # -- hmac key for session tokens. required: the controlplane refuses to
+    # start without one, because an empty key verifies any session an attacker
+    # signs with it. 32 bytes or more.
+    jwtSigningToken: ""
+    # -- session lifetime in hours
+    jwtTokenExpiry: 72
+
+    # -- username/password sign-in for the cli and the console. leave it off to
+    # offer github sign-in only; the login page renders whichever methods are
+    # configured.
+    basicAuth:
+      enabled: true
+      username: admin
+      password: ""
+
+    # -- github oauth sign-in. the callback url is derived from `urls.api` and
+    # must match the one registered on the oauth app.
+    github:
+      enabled: false
+      clientId: ""
+      clientSecret: ""
+
+  # -- github app used to clone private config repositories
+  githubApp:
+    appId: ""
+    # -- pem contents of the app's private key
+    privateKey: ""
+
+  # -- point the organisation at its config repository from the chart instead of
+  # `konfig git-source set`. applied on first boot against a fresh database;
+  # edits made in the console afterwards are preserved.
+  gitSource:
+    url: ""
+    branch: main
+    # -- github app installation id, needed for a private repository
+    installationId: ""
+    # -- converge every host a sync changed config for. false syncs without
+    # dispatching.
+    convergeOnSync: true
+
+  agents:
+    # -- enrolment token agents present to join this organisation. the
+    # organisation created on first login claims it, so a fresh deployment needs
+    # no console step.
+    enrolmentToken: ""
+    # -- global fallback token accepted from any agent, regardless of
+    # organisation. empty disables the check entirely, which is why it has no
+    # default: an unset token means any agent that can reach nats is admitted.
+    token: ""
+    # -- set to "manual" to hold newly enrolled agents for approval
+    acceptance: ""
+
+  # -- sealed secrets. a base64 key that decodes to 32 bytes, encrypting each
+  # organisation's sealing private key at rest. no default on purpose: this key
+  # opens every organisation's secrets, so a shipped one would be shared by every
+  # deployment that installed this chart unchanged. unset, sealed values simply
+  # fail to open.
+  # generate one with: openssl rand -base64 32
+  masterKey: ""
+
+  # -- the patch feature: the installed-package inventory `konfig run query
+  # packages` collects, matched against advisory data. off unless asked for,
+  # because asking sends this fleet's package names and versions to a third
+  # party. point `url` at an osv-compatible mirror to get the answer without the
+  # egress.
+  advisories:
+    enabled: false
+    url: ""
+
+  # -- task, job, orchestration-run and audit history older than this is pruned
+  # hourly. 0 keeps everything, which is what the binary defaults to; an agent on
+  # a 30-minute interval writes ~17,500 task rows a year.
+  retentionDays: 90
+
+  # -- seconds between drift checks. 0 disables them; empty uses the binary's
+  # own default.
+  driftInterval: ""
+
+  # -- ssh key for hosts that cannot run an agent. the secret is mounted
+  # read-only and must hold the keys named below.
+  ssh:
+    existingSecret: ""
+    privateKeyKey: id_ed25519
+    knownHostsKey: known_hosts
+
+  service:
+    type: ClusterIP
+    port: 10720
+    annotations: {}
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: api.konfig.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    #  - secretName: konfig-api-tls
+    #    hosts:
+    #      - api.konfig.example.com
+
+  httpRoute:
+    enabled: false
+    annotations: {}
+    parentRefs:
+      - name: gateway
+        sectionName: http
+    hostnames:
+      - api.konfig.example.com
+    rules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /
+
+  # -- prometheus exposition for the controlplane and the fleet, on /metrics
+  metrics:
+    serviceMonitor:
+      enabled: false
+      interval: 30s
+      scrapeTimeout: ""
+      labels: {}
+      relabelings: []
+      metricRelabelings: []
+
+  resources: {}
+    # limits:
+    #   cpu: 1000m
+    #   memory: 1Gi
+    # requests:
+    #   cpu: 200m
+    #   memory: 256Mi
+
+  # -- the controlplane runs migrations before it serves, so the startup probe
+  # is what tolerates a slow first boot and the liveness probe stays tight.
+  startupProbe:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 5
+    failureThreshold: 60
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 3
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 3
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+
+  # -- the image already runs as 65532. a read-only root filesystem is safe
+  # because the only thing written at runtime is a clone under /tmp, which the
+  # chart mounts as an emptyDir.
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  # -- size limit of the emptyDir backing /tmp, where config repositories are
+  # cloned and plans are rendered
+  tmpSizeLimit: 1Gi
+
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+    maxUnavailable: ""
+
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: 30
+
+  # -- additional environment variables
+  extraEnv: []
+  # - name: DATABASE_MAX_CONNS
+  #   value: "20"
+
+  # -- additional environment variables from secrets or configmaps
+  extraEnvFrom: []
+
+  # -- additional volumes
+  volumes: []
+  # -- additional volume mounts
+  volumeMounts: []
+
+console:
+  # -- set to false to run the api only, and serve the console yourself
+  enabled: true
+
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/kontrolplane/konfig/console
+    pullPolicy: IfNotPresent
+    # -- overrides the image tag whose default is the chart appVersion
+    tag: ""
+
+  logLevel: info
+
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: konfig.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  httpRoute:
+    enabled: false
+    annotations: {}
+    parentRefs:
+      - name: gateway
+        sectionName: http
+    hostnames:
+      - konfig.example.com
+    rules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: ""
+
+  resources: {}
+    # limits:
+    #   cpu: 100m
+    #   memory: 64Mi
+    # requests:
+    #   cpu: 10m
+    #   memory: 32Mi
+
+  startupProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 3
+    failureThreshold: 20
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 10
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+
+  # -- nothing is written at runtime: the bundle is read-only and config.js is
+  # mounted from a configmap.
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+    maxUnavailable: ""
+
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+
+  extraEnv: []
+  extraEnvFrom: []
+  volumes: []
+  volumeMounts: []
+
+# -- postgresql. one of `cnpg.enabled`, `database.url` or `database.existingSecret`
+# is required; the controlplane refuses to start without a database.
+database:
+  # -- full connection string, e.g.
+  # postgres://konfig:secret@postgres:5432/konfig?sslmode=require
+  url: ""
+  # -- read the connection string from an existing secret instead
+  existingSecret: ""
+  # -- key in that secret holding the connection string
+  existingSecretKey: DATABASE_URL
+  # -- maximum pooled connections. empty uses the binary's own default.
+  maxConns: ""
+
+# -- cloudnativepg cluster, managed by this chart. requires the cnpg operator
+# (>= 1.21, for the `uri` key on the generated secret) in the cluster.
+cnpg:
+  enabled: false
+  # -- name override for the cnpg cluster (defaults to fullname-db)
+  nameOverride: ""
+  # -- number of postgresql instances
+  instances: 1
+  # -- postgresql version image
+  image:
+    repository: ghcr.io/cloudnative-pg/postgresql
+    tag: "17"
+  # -- database name to create
+  database: konfig
+  # -- database owner
+  owner: konfig
+  storage:
+    size: 10Gi
+    storageClass: ""
+  resources: {}
+    # requests:
+    #   memory: 512Mi
+    #   cpu: 200m
+    # limits:
+    #   memory: 1Gi
+  # -- backup configuration
+  backup:
+    enabled: false
+    # -- retention policy
+    retentionPolicy: "30d"
+    # -- schedule in cron format
+    schedule: "0 0 * * *"
+    # -- barman object store configuration
+    barmanObjectStore: {}
+      # destinationPath: s3://backups/konfig
+      # s3Credentials:
+      #   accessKeyId:
+      #     name: backup-creds
+      #     key: ACCESS_KEY_ID
+      #   secretAccessKey:
+      #     name: backup-creds
+      #     key: SECRET_ACCESS_KEY
+
+# -- the message bus. the controlplane and every agent connect to it, with the
+# two credentials below; see `nats` for the server itself.
+messagebus:
+  # -- nats url the controlplane dials. required when `nats.enabled` is false.
+  # ignored otherwise, because the url is built from the bundled release and the
+  # controlplane password.
+  url: ""
+
+  auth:
+    # -- name of the secret holding the two passwords. deliberately a literal
+    # name rather than one derived from the release: the nats subchart has to
+    # name the same secret under `nats.container.env`, and helm cannot template a
+    # subchart's values. running two konfig releases in one namespace means
+    # changing this and both `secretKeyRef.name`s below.
+    secretName: konfig-messagebus
+    # -- use a secret you manage instead. it must carry `controlplane-password`
+    # and `agent-password`, and `nats.container.env` must name it.
+    existingSecret: ""
+    # -- password the controlplane presents. required when `nats.enabled`.
+    controlplanePassword: ""
+    # -- password every agent presents. required when `nats.enabled`; this is the
+    # value that goes in each host's `/etc/konfig/agent.env` NATS_URL.
+    agentPassword: ""
+
+# -- the upstream nats chart (https://github.com/nats-io/k8s). everything under
+# this key is its own values; only the authorization block is konfig's opinion.
+#
+# agents run outside the cluster, so they need to reach this service: expose it
+# with `nats.service.merge` (a LoadBalancer or a NodePort), or put it behind
+# whatever already fronts the cluster.
+nats:
+  enabled: true
+
+  config:
+    # -- jetstream backs the events stream, which is what gives the events page
+    # replay and history. without it events are live-only.
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          size: 10Gi
+          storageClassName: ""
+
+    cluster:
+      enabled: false
+
+    # -- subject permissions, the part konfig cares about. a single shared token
+    # would let any managed host read every organisation's events, publish
+    # desired state (arbitrary config, therefore arbitrary code) to any other
+    # host, and forge the events reactors act on. two users with the permissions
+    # below close all three.
+    #
+    # what this does not close: one agent can still subscribe to another agent's
+    # subject, because every agent presents the same credential. closing that
+    # needs a credential per host (nats auth callout), which konfig does not mint
+    # yet.
+    #
+    # `<< $VAR >>` is the nats chart's syntax for an unquoted value, so the
+    # server expands the environment variables set under `container.env`.
+    merge:
+      authorization:
+        users:
+          - user: controlplane
+            password: << $NATS_CONTROLPLANE_PASSWORD >>
+            permissions:
+              publish:
+                allow: [">"]
+              subscribe:
+                allow: [">"]
+          - user: agent
+            password: << $NATS_AGENT_PASSWORD >>
+            permissions:
+              publish:
+                allow:
+                  # heartbeats, registrations, acks, results, events
+                  - controlplane
+                  # content-addressed file fetch (request/reply)
+                  - artifacts.get
+                  # one-time enrolment for a per-agent credential
+                  - agents.enrol
+                  # replies to its own requests
+                  - _INBOX.>
+              subscribe:
+                allow:
+                  # task dispatch; see the note above on per-host scoping
+                  - agent.>
+                  - _INBOX.>
+
+  container:
+    # -- the passwords the authorization block above expands. the secret named
+    # here is the one `messagebus.auth.secretName` creates.
+    env:
+      NATS_CONTROLPLANE_PASSWORD:
+        valueFrom:
+          secretKeyRef:
+            name: konfig-messagebus
+            key: controlplane-password
+      NATS_AGENT_PASSWORD:
+        valueFrom:
+          secretKeyRef:
+            name: konfig-messagebus
+            key: agent-password
+
+serviceAccount:
+  create: true
+  # -- neither component talks to the kubernetes api, so the token is not
+  # mounted
+  automount: false
+  annotations: {}
+  name: ""

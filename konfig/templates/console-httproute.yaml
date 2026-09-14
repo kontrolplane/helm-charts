@@ -1,0 +1,3 @@
+{{- if and .Values.console.enabled .Values.console.httpRoute.enabled }}
+{{- include "konfig.httproute" (dict "ctx" . "component" "console" "values" .Values.console) }}
+{{- end }}

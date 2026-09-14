@@ -1,0 +1,62 @@
+konfig {{ .Chart.AppVersion }} has been deployed.
+
+  controlplane  {{ include "konfig.componentName" (dict "ctx" . "component" "controlplane") }}:{{ .Values.controlplane.service.port }}
+{{- if .Values.console.enabled }}
+  console       {{ include "konfig.componentName" (dict "ctx" . "component" "console") }}:{{ .Values.console.service.port }}
+{{- end }}
+{{- if .Values.nats.enabled }}
+  message bus   {{ include "konfig.nats.fullname" . }}:4222 (bundled)
+{{- else }}
+  message bus   {{ .Values.messagebus.url }} (external)
+{{- end }}
+{{- if .Values.cnpg.enabled }}
+  database      {{ include "konfig.cnpg.name" . }}, {{ .Values.cnpg.instances }} instance(s), managed by cnpg
+{{- else }}
+  database      external
+{{- end }}
+
+{{ if or .Values.controlplane.ingress.enabled .Values.controlplane.httpRoute.enabled -}}
+the api is published at {{ include "konfig.apiURL" . }}
+{{- else -}}
+no ingress for the api. reach it with:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "konfig.componentName" (dict "ctx" . "component" "controlplane") }} {{ .Values.controlplane.service.port }}:{{ .Values.controlplane.service.port }}
+{{- end }}
+{{- if .Values.console.enabled }}
+{{ if or .Values.console.ingress.enabled .Values.console.httpRoute.enabled -}}
+the console is published at {{ include "konfig.consoleURL" . }}
+{{- else -}}
+no ingress for the console. reach it with:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "konfig.componentName" (dict "ctx" . "component" "console") }} {{ .Values.console.service.port }}:{{ .Values.console.service.port }}
+{{- end }}
+{{- end }}
+
+point the cli at it and sign in once; the token is saved for you:
+
+  export KONFIG_ENDPOINT={{ include "konfig.apiURL" . }}
+{{- if .Values.controlplane.auth.basicAuth.enabled }}
+  konfig login --user {{ .Values.controlplane.auth.basicAuth.username }} --password '<the password you set>'
+{{- end }}
+  konfig agents
+
+{{ if .Values.nats.enabled -}}
+agents run on the machines you manage, not in this cluster, so they need to
+reach the bus from outside it. expose {{ include "konfig.nats.fullname" . }}:4222 (nats.service.merge takes a
+LoadBalancer or a NodePort), then on each host put this in /etc/konfig/agent.env:
+
+  NATS_URL=nats://agent:<messagebus.auth.agentPassword>@<the address you exposed>:4222
+  AGENT_TOKEN=<the organisation's enrolment token>
+
+and start it: systemctl enable --now konfig-agent
+{{- end }}
+{{- if not .Values.controlplane.masterKey }}
+
+sealed secrets are off: controlplane.masterKey is unset, so an ENC[...] value
+fails to open rather than opening with a key every deployment shares. set it
+with a key of your own to turn them on (openssl rand -base64 32).
+{{- end }}
+{{- if not .Values.controlplane.gitSource.url }}
+
+no config repository is set. konfig reads all config from git and nowhere else:
+set controlplane.gitSource.url, or point the organisation at one from the
+console.
+{{- end }}

@@ -1,0 +1,164 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.description" . }}
+
+{{ template "chart.versionBadge" . }}{{ template "chart.typeBadge" . }}{{ template "chart.appVersionBadge" . }}
+
+konfig manages configuration and runs commands across fleets of machines. this
+chart deploys the half that lives in kubernetes:
+
+| component | what it is |
+|-----------|------------|
+| controlplane | the api and the brain: reconciles the config repository, dispatches over nats, stores everything in postgres |
+| console | the web client, a static bundle served by konfig's own file server |
+| nats | the message bus, from the upstream [nats chart](https://github.com/nats-io/k8s/tree/main/helm/charts/nats) |
+| postgresql | optional, as a [cloudnativepg](https://cloudnative-pg.io) cluster |
+
+**agents are not deployed by this chart.** they run on the machines being
+managed, installed from the `.deb`/`.rpm`, and dial the bus from outside the
+cluster. see [agents](#agents) below.
+
+## install
+
+the chart refuses to render without the values it cannot invent for you - a
+database, a session signing key, a way to sign in, and the message bus
+credentials - and says which one is missing rather than crashlooping later.
+
+```sh
+helm repo add kontrolplane https://kontrolplane.github.io/helm-charts
+helm install konfig kontrolplane/konfig --namespace konfig --create-namespace -f values.yaml
+
+# or straight from the oci registry
+helm install konfig oci://ghcr.io/kontrolplane/helm-charts/konfig --version {{ .Version }} -f values.yaml
+```
+
+{{ template "chart.requirementsSection" . }}
+
+a values.yaml that works, with the database managed by cnpg and the bus bundled:
+
+```yaml
+cnpg:
+  enabled: true
+
+controlplane:
+  auth:
+    # openssl rand -hex 32
+    jwtSigningToken: "<32+ bytes>"
+    basicAuth:
+      username: admin
+      password: "<a password>"
+  # openssl rand -base64 32 - without it sealed secrets are off
+  masterKey: "<base64, 32 bytes>"
+  gitSource:
+    url: https://github.com/your-org/konfig-state
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: api.konfig.example.com
+        paths: [{ path: /, pathType: Prefix }]
+    tls:
+      - secretName: konfig-api-tls
+        hosts: [api.konfig.example.com]
+
+console:
+  ingress:
+    enabled: true
+    className: nginx
+    hosts:
+      - host: konfig.example.com
+        paths: [{ path: /, pathType: Prefix }]
+    tls:
+      - secretName: konfig-tls
+        hosts: [konfig.example.com]
+
+messagebus:
+  auth:
+    controlplanePassword: "<a password>"
+    agentPassword: "<a different password>"
+```
+
+put the secrets in a secret you manage rather than in this file where you can:
+`controlplane.existingSecret`, `database.existingSecret` and
+`messagebus.auth.existingSecret` each take one.
+
+## urls
+
+the console is a static bundle, so it is told where the api is at runtime rather
+than at build time: the chart renders `/config.js` into a configmap. the
+controlplane refuses cors from anywhere other than `FRONTEND_URL`. both urls are
+derived from each component's ingress or httproute, so two ingresses is all it
+usually takes; `urls.console` and `urls.api` override them when a proxy in front
+publishes something else, and `urls.extraOrigins` adds cors origins beyond the
+console.
+
+with no ingress at all they fall back to the localhost ports `kubectl
+port-forward` gives you, which is enough to try it from a laptop.
+
+## agents
+
+agents run on the machines you manage, so the bus has to be reachable from
+outside the cluster. expose the nats service - the upstream chart takes the
+whole service object under `nats.service.merge`:
+
+```yaml
+nats:
+  service:
+    merge:
+      spec:
+        type: LoadBalancer
+```
+
+then on each host, in `/etc/konfig/agent.env`:
+
+```sh
+NATS_URL=nats://agent:<messagebus.auth.agentPassword>@<the address you exposed>:4222
+AGENT_TOKEN=<the organisation's enrolment token>
+```
+
+and `systemctl enable --now konfig-agent`. the token is used once: the agent
+keeps its own keypair afterwards, which is what makes revoking one host possible
+without rotating the fleet. set `controlplane.agents.acceptance=manual` to hold
+new agents for approval.
+
+## message bus credentials
+
+konfig's only opinion about nats is the authorization block under
+`nats.config.merge`: two users, one per role, with subject permissions. a single
+shared credential would let any managed host read every organisation's events,
+publish desired state - arbitrary config, therefore arbitrary code - to any
+other host, and forge the events reactors act on.
+
+the two passwords live in a secret this chart creates, and the nats subchart
+reads them as environment variables the server expands. that secret is named by
+a literal value, `messagebus.auth.secretName`, and not derived from the release
+name, because helm cannot template a subchart's values and
+`nats.container.env` has to name the same secret. **running two konfig releases
+in one namespace means changing `messagebus.auth.secretName` and both
+`nats.container.env[*].valueFrom.secretKeyRef.name` together**; the chart checks
+that they agree and refuses to render when they do not.
+
+to use a bus you already run, set `nats.enabled=false` and `messagebus.url`.
+
+## database
+
+`cnpg.enabled=true` renders a cloudnativepg `Cluster` (and a `ScheduledBackup`
+when `cnpg.backup.enabled`), and the controlplane reads its connection string
+from the `uri` key of the secret the operator generates. it needs the cnpg
+operator in the cluster, 1.21 or newer.
+
+otherwise set `database.url`, or `database.existingSecret` pointing at a secret
+with a `DATABASE_URL` key. the controlplane runs its own migrations at startup,
+under a postgres advisory lock, so a rollout does not need a migration job.
+
+## scaling
+
+`controlplane.replicaCount` stays at 1 on purpose: the drift loop, the retention
+sweep and the schedules are not leader-elected yet, so a second replica runs
+them a second time. the console is stateless and has an hpa
+(`console.autoscaling`).
+
+{{ template "chart.valuesSection" . }}
+
+----------------------------------------------
+{{ template "helm-docs.versionFooter" . }}

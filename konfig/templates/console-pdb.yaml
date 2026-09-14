@@ -1,0 +1,3 @@
+{{- if and .Values.console.enabled .Values.console.podDisruptionBudget.enabled }}
+{{- include "konfig.podDisruptionBudget" (dict "ctx" . "component" "console" "values" .Values.console) }}
+{{- end }}

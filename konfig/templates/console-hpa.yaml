@@ -1,0 +1,33 @@
+{{- if and .Values.console.enabled .Values.console.autoscaling.enabled }}
+{{- $component := dict "ctx" . "component" "console" "values" .Values.console }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "konfig.componentName" $component }}
+  labels:
+    {{- include "konfig.labels" $component | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "konfig.componentName" $component }}
+  minReplicas: {{ .Values.console.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.console.autoscaling.maxReplicas }}
+  metrics:
+    {{- with .Values.console.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+    {{- with .Values.console.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+{{- end }}

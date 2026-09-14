@@ -1,0 +1,1 @@
+{{- include "konfig.service" (dict "ctx" . "component" "controlplane" "values" .Values.controlplane) }}

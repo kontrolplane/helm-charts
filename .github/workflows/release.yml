@@ -86,6 +86,19 @@ jobs:
               continue
             fi
 
+            # resolve subcharts before packaging. Chart.lock pins them, so
+            # `build` is what a release uses; `update` is only for a chart whose
+            # dependencies were added without one.
+            if grep -q '^dependencies:' "$chart/Chart.yaml"; then
+              if [ -f "$chart/Chart.lock" ]; then
+                echo "    building dependencies from Chart.lock"
+                helm dependency build "$chart"
+              else
+                echo "::warning::chart '$chart' has dependencies but no Chart.lock; resolving them unpinned"
+                helm dependency update "$chart"
+              fi
+            fi
+
             # package the chart
             helm package "$chart" -d .cr-release-packages
 

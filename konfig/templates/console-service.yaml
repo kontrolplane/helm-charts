@@ -1,0 +1,3 @@
+{{- if .Values.console.enabled }}
+{{- include "konfig.service" (dict "ctx" . "component" "console" "values" .Values.console) }}
+{{- end }}

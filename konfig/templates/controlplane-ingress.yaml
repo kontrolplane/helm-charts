@@ -1,0 +1,3 @@
+{{- if .Values.controlplane.ingress.enabled }}
+{{- include "konfig.ingress" (dict "ctx" . "component" "controlplane" "values" .Values.controlplane) }}
+{{- end }}

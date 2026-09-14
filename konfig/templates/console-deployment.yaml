@@ -1,0 +1,115 @@
+{{- if .Values.console.enabled }}
+{{- $component := dict "ctx" . "component" "console" "values" .Values.console }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "konfig.componentName" $component }}
+  labels:
+    {{- include "konfig.labels" $component | nindent 4 }}
+spec:
+  {{- if not .Values.console.autoscaling.enabled }}
+  replicas: {{ .Values.console.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "konfig.selectorLabels" $component | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # config.js is mounted with a subPath, which kubernetes never refreshes
+        # in place; the pod has to be replaced when the url changes.
+        checksum/config: {{ include (print $.Template.BasePath "/console-configmap.yaml") . | sha256sum }}
+        {{- with .Values.console.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "konfig.labels" $component | nindent 8 }}
+        {{- with .Values.console.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "konfig.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      {{- with .Values.console.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.console.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: console
+          image: {{ include "konfig.image" (dict "ctx" . "image" .Values.console.image) | quote }}
+          imagePullPolicy: {{ .Values.console.image.pullPolicy }}
+          {{- with .Values.console.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.console.service.port }}
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.console.service.port | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.console.logLevel | quote }}
+            {{- with .Values.console.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.console.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.console.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.console.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.console.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.console.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /workspace/console/public/config.js
+              subPath: config.js
+              readOnly: true
+            {{- with .Values.console.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "konfig.componentName" $component }}
+        {{- with .Values.console.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.console.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.console.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.console.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.console.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

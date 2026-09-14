@@ -1,0 +1,3 @@
+{{- if and .Values.console.enabled .Values.console.ingress.enabled }}
+{{- include "konfig.ingress" (dict "ctx" . "component" "console" "values" .Values.console) }}
+{{- end }}

@@ -1,0 +1,2 @@
+# chart dependencies are resolved at package time, from Chart.lock
+*/charts/

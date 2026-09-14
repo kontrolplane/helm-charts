@@ -1,0 +1,3 @@
+{{- if .Values.controlplane.podDisruptionBudget.enabled }}
+{{- include "konfig.podDisruptionBudget" (dict "ctx" . "component" "controlplane" "values" .Values.controlplane) }}
+{{- end }}
