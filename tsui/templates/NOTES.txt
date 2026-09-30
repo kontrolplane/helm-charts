@@ -1,0 +1,4 @@
+tsui {{ .Chart.AppVersion }} has been deployed, connecting to {{ .Values.nats.url }}.
+
+start a session with:
+  kubectl --namespace {{ .Release.Namespace }} exec -it deploy/{{ include "tsui.fullname" . }} -- tsui

@@ -1,0 +1,51 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.description" . }}
+
+{{ template "chart.versionBadge" . }}{{ template "chart.typeBadge" . }}{{ template "chart.appVersionBadge" . }}
+
+tsui is interactive, so this chart does not run it as a service. it deploys a
+single idle pod, already pointed at nats, and a session is an exec into it:
+
+```sh
+kubectl exec -it deploy/tsui -- tsui
+```
+
+that keeps nats off the public internet and gives each person their own
+session, sized to their own terminal.
+
+## install
+
+```sh
+helm repo add kontrolplane https://kontrolplane.github.io/helm-charts
+helm install tsui kontrolplane/tsui --namespace nats --set nats.url=nats://nats:4222
+
+# or straight from the oci registry
+helm install tsui oci://ghcr.io/kontrolplane/helm-charts/tsui --version {{ .Version }} --set nats.url=nats://nats:4222
+```
+
+## credentials
+
+a user credentials file, the way nats-box and most nats deployments hand them
+out, is mounted from a secret you manage:
+
+```sh
+kubectl create secret generic tsui-creds --from-file=nats.creds=./tsui.creds
+```
+
+```yaml
+nats:
+  credentials:
+    existingSecret: tsui-creds
+```
+
+for a username and password or a token, put `NATS_USER` and `NATS_PASSWORD`, or
+`NATS_TOKEN`, in a secret and name it in `nats.existingSecret`.
+
+tls works the same way: mount the files with `volumes` and `volumeMounts`, and
+point `NATS_CA`, `NATS_CERT` and `NATS_KEY` at them with `extraEnv`.
+
+{{ template "chart.valuesSection" . }}
+
+----------------------------------------------
+{{ template "helm-docs.versionFooter" . }}
