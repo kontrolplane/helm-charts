@@ -18,30 +18,37 @@ jobs:
       charts: ${{ steps.changed.outputs.charts }}
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: find-changed-charts
         id: changed
         run: |
-          # on first commit or if gh-pages doesn't exist yet, treat all charts as changed
-          if ! git rev-parse origin/gh-pages >/dev/null 2>&1; then
-            charts=$(find . -maxdepth 2 -name Chart.yaml -exec dirname {} \; | sed 's|^\./||' | sort)
-          else
-            charts=$(git diff --name-only origin/gh-pages HEAD -- | grep '/' | cut -d/ -f1 | sort -u)
-            # filter to only directories that actually contain a Chart.yaml
-            charts=$(echo "$charts" | while read dir; do
-              [ -f "$dir/Chart.yaml" ] && echo "$dir"
-            done)
+          # a chart is released when its current version has no tag yet. one
+          # that has a tag but changed since is an error: the version was not
+          # bumped, and merging it would publish nothing.
+          charts=""
+          failed=0
+
+          for chart in $(find . -mindepth 2 -maxdepth 2 -name Chart.yaml -exec dirname {} \; | sed 's|^\./||' | sort); do
+            version=$(yq '.version' "$chart/Chart.yaml")
+            tag="${chart}-${version}"
+
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              charts="$charts $chart"
+            elif ! git diff --quiet "$tag" HEAD -- "$chart"; then
+              echo "::error file=$chart/Chart.yaml::chart '$chart' changed since $tag was released. bump the version in $chart/Chart.yaml before merging."
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
           fi
 
-          if [ -z "$charts" ]; then
-            echo "charts=[]" >> "$GITHUB_OUTPUT"
-          else
-            json=$(echo "$charts" | jq -R -s -c 'split("\n") | map(select(length > 0))')
-            echo "charts=$json" >> "$GITHUB_OUTPUT"
-          fi
+          json=$(echo "$charts" | jq -R -c 'split(" ") | map(select(length > 0))')
+          echo "charts=$json" >> "$GITHUB_OUTPUT"
 
       - name: print-changes
         run: echo "changed charts - ${{ steps.changed.outputs.charts }}"
@@ -53,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -63,55 +70,31 @@ jobs:
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
       - name: install-helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
-      - name: check-versions-and-package-charts
-        id: package
+      - name: package-charts
         run: |
           mkdir -p .cr-release-packages
-          failed=0
 
           for chart in $(echo '${{ needs.changes.outputs.charts }}' | jq -r '.[]'); do
-            echo "==> processing $chart"
+            version=$(yq '.version' "$chart/Chart.yaml")
+            echo "==> packaging $chart $version"
 
-            # read current version from Chart.yaml
-            current=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
-            echo "    version: $current"
-
-            # check if this version was already released
-            tag="${chart}-${current}"
-            if git tag -l "$tag" | grep -q .; then
-              echo "::error::chart '$chart' version $current already released (tag $tag exists). bump the version in $chart/Chart.yaml before merging."
-              failed=1
-              continue
+            # `helm dependency build` resolves subcharts from Chart.lock, but
+            # only from repositories helm already knows about.
+            for repo in $(yq '.dependencies[].repository' "$chart/Chart.yaml" | grep -E '^https?://'); do
+              helm repo add "$(echo "$repo" | sha256sum | cut -c1-12)" "$repo"
+            done
+            if [ "$(yq '.dependencies | length' "$chart/Chart.yaml")" -gt 0 ]; then
+              helm dependency build "$chart"
             fi
 
-            # resolve subcharts before packaging. Chart.lock pins them, so
-            # `build` is what a release uses; `update` is only for a chart whose
-            # dependencies were added without one.
-            if grep -q '^dependencies:' "$chart/Chart.yaml"; then
-              if [ -f "$chart/Chart.lock" ]; then
-                echo "    building dependencies from Chart.lock"
-                helm dependency build "$chart"
-              else
-                echo "::warning::chart '$chart' has dependencies but no Chart.lock; resolving them unpinned"
-                helm dependency update "$chart"
-              fi
-            fi
-
-            # package the chart
             helm package "$chart" -d .cr-release-packages
 
-            # tag the release
-            echo "    tagging $tag"
-            git tag "$tag"
+            # pushed once the chart is published, so a failed publish can be
+            # re-run instead of being blocked by its own tag.
+            git tag "${chart}-${version}"
           done
-
-          if [ "$failed" -ne 0 ]; then
-            exit 1
-          fi
-
-          git push --tags
 
       - name: login-to-ghcr
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -125,7 +108,7 @@ jobs:
           done
 
       - name: checkout-gh-pages
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: gh-pages
           path: gh-pages
@@ -164,3 +147,6 @@ jobs:
           git diff --cached --quiet && echo "no changes to publish" && exit 0
           git commit -m "release $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push origin HEAD:gh-pages --force
+
+      - name: push-tags
+        run: git push --tags
