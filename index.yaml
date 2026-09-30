@@ -3,7 +3,7 @@ entries:
   feed:
   - apiVersion: v2
     appVersion: 1.2.0
-    created: "2026-09-30T17:51:28.033368255Z"
+    created: "2026-09-30T18:49:14.412226292Z"
     description: a helm chart for kontrolplane-feed, a self-hosted rss reader
     digest: 98a551ff53022a738ec9fd0865d86fbca7f963ecd058ef7ec7c69e64ca1e76be
     name: feed
@@ -13,7 +13,7 @@ entries:
     version: 1.0.3
   - apiVersion: v2
     appVersion: 1.1.0
-    created: "2026-09-30T17:51:28.032698969Z"
+    created: "2026-09-30T18:49:14.411758504Z"
     description: a helm chart for kontrolplane-feed, a self-hosted rss reader
     digest: c830253e5eea135c133655563e76693d2b4a54a239f835354d3b0ac9c0f47549
     name: feed
@@ -23,7 +23,7 @@ entries:
     version: 1.0.2
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-09-30T17:51:28.032058968Z"
+    created: "2026-09-30T18:49:14.411233411Z"
     description: a helm chart for kontrolplane-feed, a self-hosted rss reader
     digest: 6137bd31052c0cf0a17f4deafcf362f9d2b3b44495b4af76c8a1e8bb9ab0a1cb
     name: feed
@@ -34,7 +34,35 @@ entries:
   konfig:
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-09-30T17:51:28.036782363Z"
+    created: "2026-09-30T18:49:14.418399215Z"
+    dependencies:
+    - condition: nats.enabled
+      name: nats
+      repository: https://nats-io.github.io/k8s/helm/charts/
+      version: 2.14.6
+    description: a helm chart for konfig, configuration management and remote execution
+      across fleets of machines
+    digest: 644d76c2ab6e4358256843419ce51efb98d82bd427b8e0bee7391bca74420d72
+    home: https://kontrolplane.dev
+    keywords:
+    - konfig
+    - configuration-management
+    - fleet
+    - remote-execution
+    - nats
+    maintainers:
+    - name: kontrolplane
+      url: https://github.com/kontrolplane
+    name: konfig
+    sources:
+    - https://github.com/kontrolplane/konfig
+    type: application
+    urls:
+    - https://kontrolplane.github.io/helm-charts/konfig-1.0.0.tgz
+    version: 1.0.0
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-09-30T18:49:14.414837865Z"
     dependencies:
     - condition: nats.enabled
       name: nats
@@ -63,7 +91,29 @@ entries:
   tsui:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-09-30T17:51:28.037133315Z"
+    created: "2026-09-30T18:49:14.418957026Z"
+    description: a helm chart for tsui, a terminal user interface for nats, run as
+      an in-cluster pod to exec into
+    digest: 451450856003f3b84486ef2829f97f676cfe464d2cfbf2b9162156524a779106
+    home: https://kontrolplane.dev
+    keywords:
+    - tsui
+    - nats
+    - jetstream
+    - tui
+    maintainers:
+    - name: kontrolplane
+      url: https://github.com/kontrolplane
+    name: tsui
+    sources:
+    - https://github.com/kontrolplane/tsui
+    type: application
+    urls:
+    - https://kontrolplane.github.io/helm-charts/tsui-1.0.0.tgz
+    version: 1.0.0
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-09-30T18:49:14.418674115Z"
     description: a helm chart for tsui, a terminal user interface for nats, run as
       an in-cluster pod to exec into
     digest: dee29960f40bf0e531bfbf90b1c2f01dadf90d6a15622eabebc431f6a8b92f1a
@@ -83,4 +133,4 @@ entries:
     urls:
     - https://kontrolplane.github.io/helm-charts/tsui-0.1.0.tgz
     version: 0.1.0
-generated: "2026-09-30T17:51:28.031212448Z"
+generated: "2026-09-30T18:49:14.41062885Z"
