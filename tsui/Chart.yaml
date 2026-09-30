@@ -4,7 +4,7 @@ name: tsui
 description: a helm chart for tsui, a terminal user interface for nats, run as an in-cluster pod to exec into
 
 type: application
-version: 0.1.0
+version: 1.0.0
 appVersion: "1.0.0"
 
 home: https://kontrolplane.dev

@@ -2,7 +2,7 @@
 
 a helm chart for konfig, configuration management and remote execution across fleets of machines
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
 
 konfig manages configuration and runs commands across fleets of machines. this
 chart deploys the half that lives in kubernetes:
@@ -29,7 +29,7 @@ helm repo add kontrolplane https://kontrolplane.github.io/helm-charts
 helm install konfig kontrolplane/konfig --namespace konfig --create-namespace -f values.yaml
 
 # or straight from the oci registry
-helm install konfig oci://ghcr.io/kontrolplane/helm-charts/konfig --version 0.1.0 -f values.yaml
+helm install konfig oci://ghcr.io/kontrolplane/helm-charts/konfig --version 1.0.0 -f values.yaml
 ```
 
 ## Requirements

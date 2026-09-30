@@ -2,7 +2,7 @@
 
 a helm chart for tsui, a terminal user interface for nats, run as an in-cluster pod to exec into
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.0](https://img.shields.io/badge/AppVersion-1.0.0-informational?style=flat-square)
+![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.0](https://img.shields.io/badge/AppVersion-1.0.0-informational?style=flat-square)
 
 tsui is interactive, so this chart does not run it as a service. it deploys a
 single idle pod, already pointed at nats, and a session is an exec into it:
@@ -21,7 +21,7 @@ helm repo add kontrolplane https://kontrolplane.github.io/helm-charts
 helm install tsui kontrolplane/tsui --namespace nats --set nats.url=nats://nats:4222
 
 # or straight from the oci registry
-helm install tsui oci://ghcr.io/kontrolplane/helm-charts/tsui --version 0.1.0 --set nats.url=nats://nats:4222
+helm install tsui oci://ghcr.io/kontrolplane/helm-charts/tsui --version 1.0.0 --set nats.url=nats://nats:4222
 ```
 
 ## credentials
